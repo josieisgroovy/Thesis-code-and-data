@@ -1,0 +1,449 @@
+---
+title: "eckert premed"
+output: html_document
+date: "2026-10-16"
+---
+##Load packages and functions
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(vegan)
+library(broom)
+sterror <- function(x){ sd(x)/sqrt(length(x))} #standard error function
+read_fasta_df <- function (file = "") { #easily read fastas into dfs
+  fasta <- readLines(file)
+  ind <- grep(">", fasta)
+  s <- data.frame(ind = ind, from = ind + 1, to = c((ind - 
+                                                       1)[-1], length(fasta)))
+  seqs <- rep(NA, length(ind))
+  for (i in 1:length(ind)) {
+    seqs[i] <- paste(fasta[s$from[i]:s$to[i]], collapse = "")
+  }
+  tib <- tibble(label = gsub(">", "", fasta[ind]), sequence = seqs)
+  return(tib)
+}
+
+write_fasta_df <- function (data, filename) 
+{
+  fastaLines = c()
+  for (rowNum in 1:nrow(data)) {
+    fastaLines = c(fastaLines, as.character(paste(">", 
+                                                  data[rowNum, "label"], sep = "")))
+    fastaLines = c(fastaLines, as.character(data[rowNum, 
+                                                 "sequence"]))
+  }
+  fileConn <- file(filename)
+  writeLines(fastaLines, fileConn)
+  close(fileConn)
+}
+```
+
+##Read in data
+
+```{r}
+premeds<-read_fasta_df("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_master_seqs.fasta") #all pre-med sequences
+abundances<-read.csv("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_absolute_abundance_df.csv") #sequence abundance data for each sample
+```
+
+##Format Abundance Data
+
+```{r}
+#Format abundance data for use in generating per-sample formatted fastas for MED
+abundances$sampleno<-c(1:nrow(abundances)) #assign simple number to each sample
+abundances_clean<-abundances|> #remove uneccesary columns
+  select(-sample_uid, -sample_name)
+abundances_long<-abundances_clean|> #make into long df
+  pivot_longer(-sampleno, names_to = "label", values_to = "value")|>
+  filter(value > 0) #|>
+ # mutate(label= str_remove(label, "X"))
+
+write_csv(abundances_long, "/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_abundance_long.csv")
+
+premeds_abun<-merge(premeds, abundances_long, by='label') #merge in sequences
+
+samplekey<-data.frame(sample_name=abundances$sample_name, sampleno=abundances$sampleno) #make key of sample names and numbers for later
+write_csv(samplekey, "/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/samplekey.csv")
+```
+
+##Prepare data for MED
+
+```{r}
+#There are 241 samples in this dataset. A fasta file will be produced for each one, which can then be concatenated in the command line.
+samples<-c(1:241)
+padded<-read_fasta_df("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_master_seqs_padded.fasta") #use this to test with all premed seqs from SymPortal, following o-pad-with-gaps as in SymPortal
+abundances_long<-read.csv("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_abundance_long.csv")
+#Use this loop to create output fastas
+for (i in 1:length(samples)){
+minidf<-abundances_long|>
+  filter(sampleno==samples[i])
+
+  meddf<-data.frame(sampleno=c(), sequence=c(), value=c())
+  for (q in 1:nrow(minidf)){
+  step1<-minidf[q,]
+  repeatdf<-do.call("rbind", replicate(step1$value, step1, simplify = FALSE))
+  meddf<-rbind(meddf, repeatdf)
+  }
+  stepcount<-c(1:sum(minidf$value))
+  meddf$stepcount<-stepcount
+ meddf$defline<-paste("Sample-", meddf$sampleno, "_Read", meddf$stepcount, sep="")
+ 
+
+meddf$label<-gsub("^X", "", meddf$label)
+
+newdf<-meddf|>
+#  left_join(aligned, by=c("seqname"="label"))|>
+  left_join(padded, by="label")|> #choose either aligned (C only) or padded
+  drop_na()
+
+exportdata<-data.frame(label=(newdf$defline),sequence=(newdf$sequence))
+write_fasta_df(exportdata, paste("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/sample_", samples[i],".fasta", sep=""))
+}
+```
+
+##Find M values to test
+
+```{r}
+#Find M values to test in MED: the MED default (N*0.0001), the SymPortal default (N*0.004), and double SymPortal (N*0.008)
+pre_med_dataset<-read_fasta_df("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/allpremed.fasta") #use concatenated dataset
+
+reads<-nrow(pre_med_dataset)
+M_reads<-reads*0.004 #find M as SymPortal would assign
+med_rec<-reads/10000 #find MED default M for comparison
+M_double<-reads*0.008 #find M as double SymPortal assignment
+```
+
+##Read MED outputs
+
+```{r}
+#this section should take you through the outputs of ONE case study for MED. Repeat for all case studies to analyse
+#Test: changing M (minimum substantive abundance values)
+#outputs
+output_files<-list.files(path="/Volumes/LaCie/Eckert_med_3", recursive= TRUE, full.names=TRUE, pattern="MATRIX-COUNT.txt")
+output_fastas<-list.files(path="/Volumes/LaCie/Eckert_med_3", recursive= TRUE, full.names=TRUE, pattern="NODE-REPRESENTATIVES.fasta")
+directory<-"/Volumes/LaCie/Eckert_med_3"
+all_seqs<-read_fasta_df("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_master_seqs.fasta")
+samplekey<-read.csv("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/samplekey.csv")
+
+
+mval<-c(3206, 21000, 39000, 57000, 75000, 93000, 128221, 162000, 198000, 244000, 256441) #min substantive abundances
+
+nodes<-c()
+nodes_df<-data.frame()
+for (i in 1:length(output_files)){
+output1<-read_tsv(output_files[i]) #read in MED ratios
+long<-pivot_longer(output1, -samples)#turn into long dataframe
+long$file<-output_files[i] #merge with id information
+long$filenum<-sapply(strsplit(long$file, '/output'), `[`, 2)
+long$num<-sapply(strsplit(long$filenum, '/'), '[',1)
+long$num<-as.numeric(long$num)
+long<-long|>
+  select(-file, -filenum)
+
+nodesnum<-length(unique(long$name)) #number of unique nodes for that m value
+nodes<-append(nodes, nodesnum)
+nodefasta<-read_fasta_df(output_fastas[i])
+nodefasta$name<-str_sub(nodefasta$label, end=9) #unique identifier lasts 9 characters
+combineddf<-long|>
+  left_join(nodefasta, by="name")|> #join sequences to long df
+  group_by(sequence, samples, num)|>
+  mutate(value=sum(value))|>
+  ungroup()|>
+  select(-name)|>
+  distinct()
+combineddf$seqcompressed<-str_replace_all(combineddf$sequence, "-", "")
+
+combineddf2<-combineddf|>
+  select(-sequence, -label)|>
+  mutate(sequence=seqcompressed)|>
+  select(-seqcompressed)
+
+seq_df<-combineddf2|>
+ # left_join(seqs_c, by="sequence")|> #use for analysing aligned seqs
+  left_join(all_seqs, by="sequence")|> #use for analysing padded seqs
+  filter(value>0)|>
+  filter(str_detect(label, "C")) #turn off if analysing all genera
+
+seq_df2<-seq_df|>
+  group_by(samples)|>
+  summarise(sample_nodes=length(unique(sequence)))|>
+  ungroup() 
+
+seq_df3<-seq_df|>
+  left_join(seq_df2, by="samples")
+
+seq_df3$sampleno<-as.integer(str_sub(seq_df3$samples, start=8))
+seq_df_final<-seq_df3|>
+  select(-samples)
+
+nodes_df<-rbind(nodes_df, seq_df_final)
+
+}
+
+all_nodes<-nodes_df|>#big df of all outputs of this MED test for Eckert
+  left_join(samplekey, by='sampleno')
+
+
+newfile<-file.path(directory, basename(output_files[1]))
+newfile<-gsub("MATRIX-COUNT.txt", "all_nodes.csv", newfile)
+write_csv(all_nodes, newfile) #write all nodes to file for reference later
+```
+
+```{r}
+#this section should take you through the outputs of ONE case study for MED. Repeat for all case studies to analyse
+#Test: changing m (entropy threshold) under MED default M
+#outputs
+output_files<-list.files(path="/Volumes/LaCie/Eckert_med_1", recursive= TRUE, full.names=TRUE, pattern="MATRIX-COUNT.txt")
+output_fastas<-list.files(path="/Volumes/LaCie/Eckert_med_1", recursive= TRUE, full.names=TRUE, pattern="NODE-REPRESENTATIVES.fasta")
+directory<-"/Volumes/LaCie/Eckert_med_1"
+all_seqs<-read_fasta_df("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_master_seqs.fasta")
+samplekey<-read.csv("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/samplekey.csv")
+
+
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0) #min entropy thresholds
+
+nodes<-c()
+nodes_df<-data.frame()
+for (i in 1:length(output_files)){
+output1<-read_tsv(output_files[i]) #read in MED ratios
+long<-pivot_longer(output1, -samples)#turn into long dataframe
+long$file<-output_files[i] #merge with id information
+long$filenum<-sapply(strsplit(long$file, '/output'), `[`, 2)
+long$num<-sapply(strsplit(long$filenum, '/'), '[',1)
+long$num<-as.numeric(long$num)
+long<-long|>
+  select(-file, -filenum)
+
+nodesnum<-length(unique(long$name)) #number of unique nodes for that m value
+nodes<-append(nodes, nodesnum)
+nodefasta<-read_fasta_df(output_fastas[i])
+nodefasta$name<-str_sub(nodefasta$label, end=9) #"root" node has fewer characters at start, name doesn't match later. bug.
+combineddf<-long|>
+  left_join(nodefasta, by="name")|> #join sequences to long df
+  group_by(sequence, samples, num)|>
+  mutate(value=sum(value))|>
+  ungroup()|>
+  select(-name)|>
+  distinct()
+combineddf$seqcompressed<-str_replace_all(combineddf$sequence, "-", "")
+
+combineddf2<-combineddf|>
+  select(-sequence, -label)|>
+  mutate(sequence=seqcompressed)|>
+  select(-seqcompressed)
+
+seq_df<-combineddf2|>
+ # left_join(seqs_c, by="sequence")|> #use for analysing aligned seqs
+  left_join(all_seqs, by="sequence")|> #use for analysing padded seqs
+  filter(value>0)|>
+  filter(str_detect(label, "C")) #turn off if analysing all genera
+
+seq_df2<-seq_df|>
+  group_by(samples)|>
+  summarise(sample_nodes=length(unique(sequence)))|>
+  ungroup() 
+
+seq_df3<-seq_df|>
+  left_join(seq_df2, by="samples")
+
+seq_df3$sampleno<-as.integer(str_sub(seq_df3$samples, start=8))
+seq_df_final<-seq_df3|>
+  select(-samples)
+
+nodes_df<-rbind(nodes_df, seq_df_final)
+
+}
+all_nodes<-nodes_df|>#big df of all outputs of this MED test for Eckert
+  left_join(samplekey, by='sampleno')
+
+
+newfile<-file.path(directory, basename(output_files[1]))
+newfile<-gsub("MATRIX-COUNT.txt", "all_nodes.csv", newfile)
+write_csv(all_nodes, newfile) #write all nodes to file for reference later
+
+```
+
+```{r}
+#this section should take you through the outputs of ONE case study for MED. Repeat for all case studies to analyse
+#Test: changing m (entropy threshold) under SymPortal M
+#outputs
+output_files<-list.files(path="/Volumes/LaCie/Eckert_med_2", recursive= TRUE, full.names=TRUE, pattern="MATRIX-COUNT.txt")
+output_fastas<-list.files(path="/Volumes/LaCie/Eckert_med_2", recursive= TRUE, full.names=TRUE, pattern="NODE-REPRESENTATIVES.fasta")
+directory<-"/Volumes/LaCie/Eckert_med_2"
+all_seqs<-read_fasta_df("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/pre_med_master_seqs.fasta")
+samplekey<-read.csv("/Users/josiedanckaert/Downloads/20261003T075710_danckjo1/pre_med_seqs/samplekey.csv")
+
+
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0) #min entropy threshold
+
+nodes<-c()
+nodes_df<-data.frame()
+for (i in 1:length(output_files)){
+output1<-read_tsv(output_files[i]) #read in MED ratios
+long<-pivot_longer(output1, -samples)#turn into long dataframe
+long$file<-output_files[i] #merge with id information
+long$filenum<-sapply(strsplit(long$file, '/output'), `[`, 2)
+long$num<-sapply(strsplit(long$filenum, '/'), '[',1)
+long$num<-as.numeric(long$num)
+long<-long|>
+  select(-file, -filenum)
+
+nodesnum<-length(unique(long$name)) #number of unique nodes for that m value
+nodes<-append(nodes, nodesnum)
+nodefasta<-read_fasta_df(output_fastas[i])
+nodefasta$name<-str_sub(nodefasta$label, end=9) #"root" node has fewer characters at start, name doesn't match later. bug.
+combineddf<-long|>
+  left_join(nodefasta, by="name")|> #join sequences to long df
+  group_by(sequence, samples, num)|>
+  mutate(value=sum(value))|>
+  ungroup()|>
+  select(-name)|>
+  distinct()
+combineddf$seqcompressed<-str_replace_all(combineddf$sequence, "-", "")
+
+combineddf2<-combineddf|>
+  select(-sequence, -label)|>
+  mutate(sequence=seqcompressed)|>
+  select(-seqcompressed)
+
+seq_df<-combineddf2|>
+ # left_join(seqs_c, by="sequence")|> #use for analysing aligned seqs
+  left_join(all_seqs, by="sequence")|> #use for analysing padded seqs
+  filter(value>0)|>
+  filter(str_detect(label, "C")) #turn off if analysing all genera
+
+seq_df2<-seq_df|>
+  group_by(samples)|>
+  summarise(sample_nodes=length(unique(sequence)))|>
+  ungroup() 
+
+seq_df3<-seq_df|>
+  left_join(seq_df2, by="samples")
+
+seq_df3$sampleno<-as.integer(str_sub(seq_df3$samples, start=8))
+seq_df_final<-seq_df3|>
+  select(-samples)
+
+nodes_df<-rbind(nodes_df, seq_df_final)
+
+}
+  
+all_nodes<-nodes_df|>#big df of all outputs of this MED test for Eckert
+  left_join(samplekey, by='sampleno')
+
+
+newfile<-file.path(directory, basename(output_files[1]))
+newfile<-gsub("MATRIX-COUNT.txt", "all_nodes.csv", newfile)
+write_csv(all_nodes, newfile) #write all nodes to file for reference later
+```
+
+##Find abundant nodes collapsing
+
+```{r}
+all_nodes<-read.csv("/Volumes/LaCie/Eckert_med_3/all_nodes.csv") #read in all nodes
+mval<-c(3206, 21000, 39000, 57000, 75000, 93000, 128221, 162000, 198000, 244000, 256441) #m values used
+
+mval_df<-data.frame(mval, num=c(1:11))
+nodes_mval<-all_nodes|> #add proportional M values
+  left_join(mval_df, by="num")|>
+  mutate(mprop=mval/128221)
+
+sample_sum<-nodes_mval|> #add sample sums
+  group_by(sampleno, mval)|>
+  mutate(samplesum=sum(value))|>
+  ungroup()|>
+  drop_na()
+
+sample_sum$divprop<-sample_sum$value/sample_sum$samplesum
+
+profile_rep<-sample_sum|>
+  filter(divprop>=0.25)|> #keep only nodes with >25% abundance
+  group_by(sampleno, mval)|>
+  mutate(num_divs=length(unique(label)))|> #count number of sequences >25% abundance
+  ungroup()
+
+
+#catelogue the most abundant divs at each number to track changes
+real_nums<-sort(unique(profile_rep$num))
+divslist<-list()
+for (i in 1:length(real_nums)){
+  profile_rep_i<-profile_rep|>
+    filter(num==real_nums[i])
+  divset<-unique(profile_rep_i$label)
+  divslist[[i]]<-divset
+} #no dominant sequence initially present as >25% collapses by increasing M
+```
+
+```{r}
+#Follow the same process for the other tests: increasing m while holding M at MED default (N*0.0001)
+all_nodes<-read.csv("/Volumes/LaCie/Eckert_med_1/all_nodes.csv")
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8) #Extra mvals around 0.3 unnecessary
+
+mval_df<-data.frame(mval, num=c(1:18))
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mval_keep)
+
+sample_sum<-nodes_mval|>
+  group_by(sampleno, mval)|>
+  mutate(samplesum=sum(value))|>
+  ungroup()|>
+  drop_na()
+
+sample_sum$divprop<-sample_sum$value/sample_sum$samplesum
+
+profile_rep<-sample_sum|>
+  filter(divprop>=0.25)|> #keep only nodes with >25% abundance
+  group_by(sampleno, mval)|>
+  mutate(num_divs=length(unique(label)))|> #count number of sequences >25% abundance
+  ungroup()
+
+
+#catelogue the most abundant divs at each number to track changes
+real_nums<-sort(unique(profile_rep$num))
+divslist<-list()
+for (i in 1:length(real_nums)){
+  profile_rep_i<-profile_rep|>
+    filter(num==real_nums[i])
+  divset<-unique(profile_rep_i$label)
+  divslist[[i]]<-divset
+} #no dominant sequence initially present as >25% collapses by increasing M
+```
+
+```{r}
+#Follow the same process for the other tests: increasing m while holding M at SymPortal default (N*0.004)
+all_nodes<-read.csv("/Volumes/LaCie/Eckert_med_2/all_nodes.csv")
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+
+mval_df<-data.frame(mval, num=c(1:18))
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mval_keep)
+
+sample_sum<-nodes_mval|>
+  group_by(sampleno, mval)|>
+  mutate(samplesum=sum(value))|>
+  ungroup()|>
+  drop_na()
+
+sample_sum$divprop<-sample_sum$value/sample_sum$samplesum
+
+profile_rep<-sample_sum|>
+  filter(divprop>=0.25)|> #keep only nodes with >25% abundance
+  group_by(sampleno, mval)|>
+  mutate(num_divs=length(unique(label)))|> #count number of sequences >25% abundance
+  ungroup()
+
+
+#catelogue the most abundant divs at each number to track changes
+real_nums<-sort(unique(profile_rep$num))
+divslist<-list()
+for (i in 1:length(real_nums)){
+  profile_rep_i<-profile_rep|>
+    filter(num==real_nums[i])
+  divset<-unique(profile_rep_i$label)
+  divslist[[i]]<-divset
+} #no dominant sequence initially present as >25% collapses by increasing M
+```
