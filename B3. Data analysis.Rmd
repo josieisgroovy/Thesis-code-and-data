@@ -1,0 +1,610 @@
+---
+title: "profiles across case studies"
+output: html_document
+date: "2026-09-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse) 
+library(vegan)
+library(glmmTMB)
+library(mgcv)
+library(flextable)
+library(broom.mixed)
+```
+#Create Bray-Curtis Groups
+#Lamb Runs
+```{r}
+all_nodes<-read.csv("/Users/josiedanckaert/LambMEDoutputs1/all_nodes.csv")#read in data 
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sampleno, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sampleno, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){ #Use a loop to calculate the number of BC groups created by every MED test value
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sampleno, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sampleno
+
+abun_wide2<-abun_wide1.5 |> select(-sampleno) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+lamb_groups_1<-data.frame(mval=mvals_keep, groups=groups_v)|> #make a dataframe of the Lamb case study for test 1 to use later
+  mutate(case="Lamb")|>
+  mutate(maxgroups=3)
+```
+```{r}
+#Repeat process for the Lamb dataset with the other tests
+all_nodes<-read.csv("/Users/josiedanckaert/LambMED2/all_nodes.csv") #read in data
+mval<-c(568, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000, 21000, 22000, 22716, 24000, 26000, 28000, 30000, 32000, 34000, 36000, 38000, 40000, 42000, 44000, 45431) #minimum substantive abundance
+mval_df<-data.frame(mval, num=c(1:36))
+mvals_keep<-c(568, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000, 21000, 22000, 22716, 24000, 26000, 28000, 30000, 32000, 34000, 36000, 38000, 40000, 42000, 44000, 45431)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  mutate(mprop=mval/22716)|>
+  select(value, label, sampleno, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sampleno, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sampleno, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sampleno
+
+abun_wide2<-abun_wide1.5 |> select(-sampleno) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+lamb_groups_2<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(mval_prop=mval/22716)|>
+  mutate(case="Lamb")|>
+  mutate(maxgroups=3)
+```
+```{r}
+all_nodes<-read.csv("/Users/josiedanckaert/LambMEDoutputs3/all_nodes.csv")#read in data 
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sampleno, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sampleno, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sampleno, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sampleno
+
+abun_wide2<-abun_wide1.5 |> select(-sampleno) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+lamb_groups_3<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(case="Lamb")|>
+  mutate(maxgroups=2)
+```
+
+#Allen Runs
+```{r}
+#Repeat for all case studies for all tests
+all_nodes<-read.csv("/Users/josiedanckaert/AllenMED/all_nodes.csv")#read in data 
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sample_name, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+allen_groups_1<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(case="Allen")|>
+  mutate(maxgroups=3)
+```
+```{r}
+all_nodes<-read.csv("/Users/josiedanckaert/AllenMED2/all_nodes.csv")#read in data 
+mval<-c(145, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 5794, 6000, 7000, 8000, 9000, 10000, 11000, 11588)
+mval_df<-data.frame(mval, num=c(1:20))
+mvals_keep<-c(145, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 5794, 6000, 7000, 8000, 9000, 10000, 11000, 11588)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  mutate(mprop=mval/5794)|>
+  select(value, label, sample_name, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+allen_groups_2<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(mval_prop=mval/5794)|>
+  mutate(case="Allen")|>
+  mutate(maxgroups=3)
+```
+```{r}
+all_nodes<-read.csv("/Users/josiedanckaert/AllenMED3/all_nodes.csv")#read in data 
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sample_name, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+allen_groups_3<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(case="Allen")|>
+  mutate(maxgroups=2)
+```
+
+#Marhoefer runs
+```{r}
+all_nodes<-read.csv("/Users/josiedanckaert/MEDmarhoef1/all_nodes.csv")|>drop_na() #read in data and remove low abundance/no profile samples
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sample_name, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+marhoefer_groups_1<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(case="Marhoefer")|>
+  mutate(maxgroups=10)
+
+```
+```{r}
+all_nodes<-read.csv("/Users/josiedanckaert/MEDmarhoef2/all_nodes.csv")|>drop_na() #read in data and remove low abundance/no profile samples
+mval<-c(731, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 12000, 14000, 16000, 18000, 20000, 22000, 24000, 26000, 28000, 29258, 30000, 32000, 34000, 36000, 38000, 40000, 42000, 44000, 46000, 48000, 50000, 52000, 54000, 56000, 58516)
+mval_df<-data.frame(mval, num=c(1:36))
+mvals_keep<-c(731, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 12000, 14000, 16000, 18000, 20000, 22000, 24000, 26000, 28000, 29258, 30000, 32000, 34000, 36000, 38000, 40000, 42000, 44000, 46000, 48000, 50000, 52000, 54000, 56000, 58516)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  mutate(mprop=mval/29258)|>
+  select(value, label, sample_name, sequence, mval, mprop)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  group_by(sample_name, label)|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+marhoefer_groups_2<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(mval_prop=mval/29258)|>
+  mutate(case="Marhoefer")|>
+  mutate(maxgroups=10)
+```
+```{r}
+all_nodes<-read.csv("/Users/josiedanckaert/MEDmarhoef3/all_nodes.csv")|>drop_na() #read in data and remove low abundance/no profile samples
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sample_name, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  group_by(sample_name, label)|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+marhoefer_groups_3<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(case="Marhoefer")|>
+  mutate(maxgroups=8)
+```
+
+#Eckert runs
+```{r}
+all_nodes<-read.csv("/Volumes/LaCie/Eckert_med_1/all_nodes.csv")|>drop_na() #read in data and remove low abundance/no profile samples
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sample_name, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+
+eckert_groups_1<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(case="Eckert")|>
+  mutate(maxgroups=9)
+
+```
+```{r}
+all_nodes<-read.csv("/Volumes/LaCie/Eckert_med_2/all_nodes.csv")|>drop_na() #read in data and remove low abundance/no profile samples
+mval<-c(3206, 21000, 39000, 57000, 75000, 93000, 128221, 162000, 198000, 244000, 256441)
+mval_df<-data.frame(mval, num=c(1:11))
+mvals_keep<-c(3206, 21000, 39000, 57000, 75000, 93000, 128221, 162000, 198000, 244000, 256441)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  mutate(mprop=mval/128221)|>
+  select(value, label, sample_name, sequence, mval, mprop)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  group_by(sample_name, label)|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+eckert_groups_2<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(mval_prop=mval/128221)|>
+  mutate(case="Eckert")|>
+  mutate(maxgroups=8)
+```
+```{r}
+all_nodes<-read.csv("/Volumes/LaCie/Eckert_med_3/all_nodes.csv")|>drop_na() #read in data and remove low abundance/no profile samples
+mval<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.25, 0.29, 0.3, 0.31, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+mval_df<-data.frame(mval, num=c(1:18))
+mvals_keep<-c(0.01, 0.03, 0.06, 0.0965, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+nodes_mval<-all_nodes|>
+  left_join(mval_df, by="num")|>
+  filter(mval %in% mvals_keep)|>
+  select(value, label, sample_name, sequence, mval)
+
+abundance<-nodes_mval|> #sum reads for each sample and find relative abundance of each sequence per sample
+  group_by(sample_name, mval)|>
+  mutate(s_total=sum(value))|>
+  ungroup()|>
+  mutate(r_abund=value/s_total)
+
+groups_v<-c()
+
+for(i in 1:length(mvals_keep)){
+abun_wide<-abundance|> #make into wide dataframe 
+  filter(mval==mvals_keep[i])|>
+  select(sample_name, label, r_abund) |>  #remove unecessary columns
+  distinct()|>
+  group_by(sample_name, label)|>
+  pivot_wider(names_from=label, values_from=r_abund, values_fill=0)
+
+abun_wide1.5<-as.data.frame(abun_wide)
+rownames(abun_wide1.5)<-abun_wide1.5$sample_name
+
+abun_wide2<-abun_wide1.5 |> select(-sample_name) #remove sample name column
+
+#create bray curtis distance matrix and hclust object
+bc<-vegdist(abun_wide2, method="bray") 
+bc_mat<-as.matrix(bc)
+hc<-hclust(vegdist(abun_wide2, method="bray"))
+groups<-cutree(hc, h =0.4) #use this to visualise groups
+groups_df<-as.data.frame(groups)
+groups_df$sample_name<-(rownames(groups_df))
+groups_count<-length(unique(groups_df$groups))
+groups_v<-append(groups_v, groups_count)
+}
+eckert_groups_3<-data.frame(mval=mvals_keep, groups=groups_v)|>
+  mutate(case="Eckert")|>
+  mutate(maxgroups=7)
+```
+
+##Statistical testing
+```{r}
+#Test 1: increasing m (entropy threshold) under MED default M
+test_1<-lamb_groups_1|>
+  rbind(allen_groups_1)|>rbind(marhoefer_groups_1)|>rbind(eckert_groups_1)
+model1.1<-lm((groups/maxgroups)~mval, data=test_1)
+model1.2<-gam((groups/maxgroups)~mval, data=test_1)
+
+table1<-as_flextable(model1.1)
+
+save_as_docx(table1, path = "/Users/josiedanckaert/groups_mtest_1.docx")
+
+#Test 2: increasing M to 2x SymPortal M
+test_2<-lamb_groups_2|>
+  rbind(allen_groups_2)|>rbind(marhoefer_groups_2)|>rbind(eckert_groups_2)
+
+model2.2<-gam((groups/maxgroups)~mval_prop, data=test_2)
+
+table2<-as_flextable(model2.2)
+save_as_docx(table2, path = "/Users/josiedanckaert/groups_Mtest_2.docx")
+
+#Test 3: increasing m (entropy threshold) under SymPortal default M
+test_3<-lamb_groups_3|>
+  rbind(allen_groups_3)|>rbind(marhoefer_groups_3)|>rbind(eckert_groups_3)
+
+model3.1<-lm((groups/maxgroups)~mval, data=test_3)
+table3<-as_flextable(model3.1)
+save_as_docx(table3, path = "/Users/josiedanckaert/test_3_table.docx")
+
+
+```
